@@ -1,0 +1,239 @@
+#install.packages('rdrobust')
+rm(list=ls(all=TRUE))
+set.seed(1)
+library(dplyr)
+library(rdrobust)
+library(ggplot2)
+library(reshape2)
+setwd("C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R")  
+
+### SETTING UP FOR EVERYTHING - A SINGLE DGP ###
+df <- as.data.frame(matrix(0, ncol = 0, nrow = length(seq(-100,100,0.01))))
+df$x=round(seq(-100,100,0.01), digits=2)
+df=subset(df,df$x!=0)
+df$treated <- ifelse(df$x>0, 1, 0)
+
+# loop=1000
+# results<- as.data.frame(matrix(0, ncol = 8, nrow = loop))
+# colnames(results) <- c("coef_cl","coef_bc","bw_h_l","bw_h_r", "bw_h_length", 
+#                        "bw_b_l","bw_b_r","bw_b_length")
+# results.bw<- as.data.frame(matrix(0, ncol = 8, nrow = loop))
+# colnames(results.bw) <- c("coef_cl","coef_bc","bw_h_l","bw_h_r", "bw_h_length", 
+#                           "bw_b_l","bw_b_r","bw_b_length")
+# results.zero<- as.data.frame(matrix(0, ncol = 8, nrow = loop))
+# colnames(results.zero) <- c("coef_cl","coef_bc","bw_h_l","bw_h_r", "bw_h_length", 
+#                             "bw_b_l","bw_b_r","bw_b_length")
+
+ sample.x <- as.data.frame(matrix(0, ncol = 0, nrow = nrow(df)/10))
+ df$y.base<-0.5*df$x  - 0.025*df$x^2+rnorm(length(df$x),0,10)  
+ df$y.base2<-df$y.base+rnorm(length(df$x),0,20)  
+ 
+ # #df$y.base2<-0.5*df$x  - 0.025*df$x^2+rnorm(length(df$x),0,30)  
+
+#df$y.comb <- ifelse((df$x > 8 & df$x < 12) | (df$x< -8 & df$x > -12) ,df$y.base2,df$y.base)
+
+### NORMAL DISTRIBUTION ON BOTH SIDES, SAME POLYNOMIAL
+jump=10
+df$y=df$y.base+jump*df$treated
+df$y2=df$y.base2+jump*df$treated
+
+#df$y.wacky=df$y.comb+jump*df$treated
+df$y.model<- jump*df$treated + 0.5*df$x  - 0.025*df$x^2
+
+sample.x$x <- round(rnorm(nrow(df)/10, 0, 10),digits = 2) 
+sample.x=subset(sample.x, x>-100 & x<100)
+sample=inner_join(df, sample.x, by="x")
+sample=as.data.frame(sample)
+#rdrobust(sample$y.wacky,sample$x, bwselect = "msetwo")$bws
+obw_pre=rdrobust(sample$y,sample$x, bwselect = "msetwo")$bws[2,1:2]
+sample$y.wacky <- ifelse((sample$x > obw_pre[2]-1 & sample$x < obw_pre[2]) | 
+                           (sample$x < -obw_pre[1]+1 & sample$x > -obw_pre[1]),
+                         sample$y2,sample$y)
+
+sample %>%
+  filter(x > -30 & x < 30) %T>%
+  plot(y~x,., ylim = range(c(y,y.model)),
+       col="blue", ylab = "Y DGP", xlab = "X") %T>%
+  par(new = T) %>%
+  plot(y.model~x,., ylim = range(c(y,y.model)),
+       axes = FALSE, xlab = "", ylab = "")
+
+sample %>%
+  filter(x > -30 & x < 30) %T>%
+  plot(y.wacky~x,., ylim = range(c(y.wacky,y.model)),
+       col="blue", ylab = "Y DGP", xlab = "X") %T>%
+  par(new = T) %>%
+  plot(y.model~x,., ylim = range(c(y.wacky,y.model)),
+       axes = FALSE, xlab = "", ylab = "")
+
+
+results[i,6:7]=results.current$bws[2,1:2]
+
+  
+  df %>%
+    filter(x > -30 & x < 30) %T>%
+        plot(y~x,., ylim = range(c(y,y.model)),
+         col="blue", ylab = "Y DGP", xlab = "X") %T>%
+    par(new = T) %>%
+    plot(y.model~x,., ylim = range(c(y,y.model)),
+       axes = FALSE, xlab = "", ylab = "")
+  
+  df %>%
+    filter(x > -30 & x < 30) %T>%
+    plot(y.wacky~x,., ylim = range(c(y.wacky,y.model)),
+         col="blue", ylab = "Y DGP", xlab = "X") %T>%
+    par(new = T) %>%
+    plot(y.model~x,., ylim = range(c(y.wacky,y.model)),
+         axes = FALSE, xlab = "", ylab = "")
+  
+  
+
+
+  #png(paste("figures/dgp_l2_r2_j",jump,".png",sep = ""))
+  df.plot=df[df$x > -30 & df$x < 30,]
+  plot(df.plot$x,df.plot$y, ylim = range(c(df.plot$y,df.plot$y.model)),
+       col="blue", ylab = "Y DGP", xlab = "X")
+  par(new = T)
+  plot(df.plot$x,df.plot$y.model, ylim = range(c(df.plot$y,df.plot$y.model)),
+       axes = FALSE, xlab = "", ylab = "")
+  dev.off()
+  for(i in 1:loop) {
+    sample.x$x <- round(rnorm(nrow(df)/10, 0, 10),digits = 2) 
+    sample.x=subset(sample.x, x>-100 & x<100)
+    sample=inner_join(df, sample.x, by="x")
+    sample=as.data.frame(sample)
+    rdrobust(sample$y.wacky,sample$x, bwselect = "msetwo")$bws
+    rdrobust(sample$y,sample$x, bwselect = "msetwo")$bws
+    
+    sample %>%
+      filter(x > -30 & x < 30) %T>%
+      plot(y.wacky~x,., ylim = range(c(y.wacky,y.model)),
+           col="blue", ylab = "Y DGP", xlab = "X") %T>%
+      par(new = T) %>%
+      plot(y.model~x,., ylim = range(c(y.wacky,y.model)),
+           axes = FALSE, xlab = "", ylab = "")
+
+     rdplot(sample$y.wacky,sample$x)
+     rdplot(sample$y,sample$x)
+     rdrobust(sample$y.wacky,sample$x, bwselect = "msetwo")$bws
+     rdrobust(sample$y,sample$x, bwselect = "msetwo")$bws
+     rdrobust(sample$y.wacky,sample$x, bwselect = "msetwo")$coef
+     rdrobust(sample$y,sample$x, bwselect = "msetwo")$coef
+     
+          results.current=rdrobust(sample$y,sample$x, bwselect = "msetwo")
+    results[i,1:2]=t(results.current$coef[1:2,1])-jump # normalizing to zero
+    results[i,3:4]=results.current$bws[1,1:2]
+    results[i,5]=results[i,3]+results[i,4]
+    results[i,6:7]=results.current$bws[2,1:2]
+    results[i,8]=results[i,6]+results[i,7]
+    
+    sample.bw=subset(sample,x>=-results[i,6] & x<=results[i,7])
+    results.current=rdrobust(sample.bw$y,sample.bw$x, bwselect = "msetwo")
+    results.bw[i,1:2]=t(results.current$coef[1:2,1])-jump # normalizing to zero
+    results.bw[i,3:4]=results.current$bws[1,1:2]
+    results.bw[i,5]=results.bw[i,3]+results.bw[i,4]
+    results.bw[i,6:7]=results.current$bws[2,1:2]
+    results.bw[i,8]=results.bw[i,6]+results.bw[i,7]
+    
+    sample.zero=sample
+    sample.zero$y <- ifelse(sample$x>=-results[i,6] & 
+                              sample$x<=results[i,7], sample$y, 0)
+    results.current=rdrobust(sample.zero$y,sample.zero$x, bwselect = "msetwo")
+    results.zero[i,1:2]=t(results.current$coef[1:2,1])-jump # normalizing to zero
+    results.zero[i,3:4]=results.current$bws[1,1:2]
+    results.zero[i,5]=results.zero[i,3]+results.zero[i,4]
+    results.zero[i,6:7]=results.current$bws[2,1:2]
+    results.zero[i,8]=results.zero[i,6]+results.zero[i,7]
+    
+    
+  }
+  
+  # png(paste("figures/rdplot_eg_x_norm_l2_r2_j",jump,".png",sep = ""))
+  # rdplot(sample$y,sample$x)
+  # dev.off()
+  # 
+  # png(paste("figures/rdplot_eg_x_norm_l2_r2_j",jump,"_bw.png",sep = ""))
+  # rdplot(sample.bw$y,sample.bw$x)
+  # dev.off()
+  # 
+  # png(paste("figures/rdplot_eg_x_norm_l2_r2_j",jump,"_zero.png",sep = ""))
+  # rdplot(sample.zero$y,sample.zero$x)
+  # dev.off()
+  
+  
+  results_name=paste("results_x_norm_l2_r2_j",jump,sep = "")
+  assign(results_name,results)
+  
+  results_name=paste("results_bw_x_norm_l2_r2_j",jump,sep = "")
+  assign(results_name,results.bw)
+  
+  results_name=paste("results_zero_x_norm_l2_r2_j",jump,sep = "")
+  assign(results_name,results.zero)
+  
+
+
+
+### Uniform draw of x's
+# df$y=0
+# sample.x <- as.data.frame(matrix(0, ncol = 0, nrow = nrow(df)/10))
+# results<- as.data.frame(matrix(0, ncol = 3, nrow = loop))
+# colnames(results) <- c("coef","bw_l","bw_h")
+
+for (jump in c(1,5,10,20)) {
+  df$y=df$y.base+jump*df$treated
+  df$y.model<- jump*df$treated + 0.5*df$x  - 0.025*df$x^2
+  for(i in 1:loop) {
+    sample.x$x <- round(runif(nrow(df)/10, -30, 30),digits = 2) 
+    #sample.x=subset(sample.x, x>-100 & x<100)
+    sample=inner_join(df, sample.x, by="x")
+    sample=as.data.frame(sample)
+    results.current=rdrobust(sample$y,sample$x, bwselect = "msetwo")
+    results[i,1:2]=t(results.current$coef[1:2,1])-jump # normalizing to zero
+    results[i,3:4]=results.current$bws[1,1:2]
+    results[i,5]=results[i,3]+results[i,4]
+    results[i,6:7]=results.current$bws[2,1:2]
+    results[i,8]=results[i,6]+results[i,7]
+    
+    sample.bw=subset(sample,x>=-results[i,6] & x<=results[i,7])
+    results.current=rdrobust(sample.bw$y,sample.bw$x, bwselect = "msetwo")
+    results.bw[i,1:2]=t(results.current$coef[1:2,1])-jump # normalizing to zero
+    results.bw[i,3:4]=results.current$bws[1,1:2]
+    results.bw[i,5]=results.bw[i,3]+results.bw[i,4]
+    results.bw[i,6:7]=results.current$bws[2,1:2]
+    results.bw[i,8]=results.bw[i,6]+results.bw[i,7]
+    
+    sample.zero=sample
+    sample.zero$y <- ifelse(sample$x>=-results[i,6] & 
+                              sample$x<=results[i,7], sample$y, 0)
+    results.current=rdrobust(sample.zero$y,sample.zero$x, bwselect = "msetwo")
+    results.zero[i,1:2]=t(results.current$coef[1:2,1])-jump # normalizing to zero
+    results.zero[i,3:4]=results.current$bws[1,1:2]
+    results.zero[i,5]=results.zero[i,3]+results.zero[i,4]
+    results.zero[i,6:7]=results.current$bws[2,1:2]
+    results.zero[i,8]=results.zero[i,6]+results.zero[i,7]
+  }
+  
+  # png(paste("figures/rdplot_eg_x_unif_l2_r2_j",jump,".png",sep = ""))
+  # rdplot(sample$y,sample$x)
+  # dev.off()
+  # 
+  # png(paste("figures/rdplot_eg_x_unif_l2_r2_j",jump,"_bw.png",sep = ""))
+  # rdplot(sample.bw$y,sample.bw$x)
+  # dev.off()
+  # 
+  # png(paste("figures/rdplot_eg_x_unif_l2_r2_j",jump,"_zero.png",sep = ""))
+  # rdplot(sample.zero$y,sample.zero$x)
+  # dev.off()
+  # 
+  
+  results_name=paste("results_x_unif_l2_r2_j",jump,sep = "")
+  assign(results_name,results)
+  
+  results_name=paste("results_bw_x_unif_l2_r2_j",jump,sep = "")
+  assign(results_name,results.bw)
+  
+  results_name=paste("results_zero_x_unif_l2_r2_j",jump,sep = "")
+  assign(results_name,results.zero)
+  
+}
+
