@@ -42,10 +42,7 @@ df$y.noisy=df$y+rnorm(length(df$x),0,30)
 df$y.model<- jump*df$treated + 0.5*df$x  - 0.025*df$x^2
 
 
-#for(i in 1:loop) {
-   set.seed(1)
-   for(i in 1:10) {
-  # #i=1
+for(i in 1:loop) {
   sample.x$x <- round(rnorm(nrow(df)/10, 0, 10),digits = 2) 
   sample.x=subset(sample.x, x>-100 & x<100)
   sample=as.data.frame(inner_join(df, sample.x, by="x"))
@@ -100,12 +97,15 @@ df$y.model<- jump*df$treated + 0.5*df$x  - 0.025*df$x^2
   # results.con[i,8]=results.con[i,6]+results.con[i,7]
   # 
   # results.con[i,9:12]=results.con[i,1:4]-results.con[i,5:8]
+  
+  if (i <= 10) {
+
   coef_base=paste("Base: Coef = ",round(results[i,1],digits = 2)+jump,sep = "")
   coef_wacky=paste("Wacky: Coef = ",round(results[i,5],digits = 2)+jump,sep = "")
   coef_zero=paste("Zero: Coef = ",round(results.zero[i,1],digits = 2)+jump,sep = "")
   coef_bwo=paste("Drop: Coef = ",round(results.bwo[i,1],digits = 2)+jump,sep = "")
   
-  figure_name=paste("figures/wacky_2_eg_",i,"_zero.png",sep = "")
+  figure_name=paste("figures/wacky_eg_",i,"_zero.png",sep = "")
   png(figure_name)
   sample.zero %>%
     filter(x > -20 & x < 20) %T>%
@@ -122,7 +122,7 @@ df$y.model<- jump*df$treated + 0.5*df$x  - 0.025*df$x^2
          col=c("blue", "red", "green"), lty=1:3, cex=0.8)
   dev.off()
 
-  figure_name=paste("figures/wacky_2_eg_",i,"_bwo.png",sep = "")
+  figure_name=paste("figures/wacky_eg_",i,"_bwo.png",sep = "")
   png(figure_name)
   temp.bwo=sample.bwo %>%
     filter(x > -20 & x < 20)
@@ -142,77 +142,180 @@ df$y.model<- jump*df$treated + 0.5*df$x  - 0.025*df$x^2
     legend("top", legend=c(coef_base, coef_wacky, coef_bwo),
            col=c("blue", "red", "green"), lty=1:3, cex=0.8)
     dev.off()
-  
+  }
 }
 
-   save.image("stressout_cont_data.RData")
+save.image("stressout_data.RData")
 
-
-png("figures/coeff_diff_wacky_bwo_2.png")
-ggplot(results.bwo, aes(coef_diff)) + geom_density()
+ ## wacky_base_diff
+ 
+ png("figures/coef_diff_base_wacky.png")
+ ggplot(results, aes(coef_diff)) + geom_density()
+ dev.off()
+ 
+ png("figures/coef_diff_cdf_base_wacky.png")
+ ggplot(results, aes(coef_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+png("figures/bw_diff_base_wacky.png")
+ ggplot(results, aes(bw_length_diff)) + geom_density()
+ dev.off()
+ 
+ png("figures/bw_diff_cdf_base_wacky.png")
+ ggplot(results, aes(bw_length_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+ png("figures/bw_l_diff_base_wacky.png")
+ ggplot(results, aes(bw_l_diff)) + geom_density()
+ dev.off()
+ 
+ png("figures/bw_l_diff_cdf_base_wacky.png")
+ ggplot(results, aes(bw_l_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+ png("figures/bw_r_diff_wacky.png")
+ ggplot(results, aes(bw_r_diff)) + geom_density()
+ dev.off()
+ 
+ png("figures/bw_r_diff_cdf_base_wacky.png")
+ ggplot(results, aes(bw_r_diff)) + stat_ecdf(geom = "step")
+ dev.off()   
+   
+### bwo_base_diff
+ png("figures/coef_diff_base_bwo.png")
+ ggplot(results.bwo, aes(coef_diff)) + geom_density()
+ dev.off()
+ 
+ png("figures/coef_diff_cdf_base_bwo.png")
+ ggplot(results.bwo, aes(coef_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+ png("figures/bw_diff_base_bwo.png")
+ ggplot(results.bwo, aes(bw_length_diff)) + geom_density()
+ dev.off()
+ 
+ png("figures/bw_diff_cdf_base_bwo.png")
+ ggplot(results.bwo, aes(bw_length_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+ png("figures/bw_l_diff_base_bwo.png")
+ ggplot(results.bwo, aes(bw_l_diff)) + geom_density()
+ dev.off()
+ 
+ png("figures/bw_l_diff_cdf_base_bwo.png")
+ ggplot(results.bwo, aes(bw_l_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+ 
+ png("figures/bw_r_diff_base_bwo.png")
+ ggplot(results.bwo, aes(bw_r_diff)) + geom_density()
+ dev.off()
+ 
+ png("figures/bw_r_diff_cdf_base_bwo.png")
+ ggplot(results.bwo, aes(bw_r_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+ 
+### bwo_wacky_diff
+png("figures/coef_diff_wacky_bwo.png")
+ggplot(results.bwo, aes(coef_diff_wa)) + geom_density()
 dev.off()
 
-png("figures/coeff_diff_cdf_wacky_bwo_2.png")
-ggplot(results.bwo, aes(coef_diff)) + stat_ecdf(geom = "step")
+png("figures/coef_diff_cdf_wacky_bwo.png")
+ggplot(results.bwo, aes(coef_diff_wa)) + stat_ecdf(geom = "step")
 dev.off()
 
-png("figures/bw_diff_wacky_bwo_2.png")
-ggplot(results.bwo, aes(bw_length_diff)) + geom_density()
+png("figures/bw_diff_wacky_bwo.png")
+ggplot(results.bwo, aes(bw_length_diff_wa)) + geom_density()
 dev.off()
 
-png("figures/bw_diff_cdf_wacky_bwo_2.png")
-ggplot(results.bwo, aes(bw_length_diff)) + stat_ecdf(geom = "step")
+png("figures/bw_diff_cdf_wacky_bwo.png")
+ggplot(results.bwo, aes(bw_length_diff_wa)) + stat_ecdf(geom = "step")
 dev.off()
 
-png("figures/bw_l_diff_wacky_bwo_2.png")
+png("figures/bw_l_diff_wacky_bwo.png")
 ggplot(results.bwo, aes(bw_l_diff)) + geom_density()
 dev.off()
 
-png("figures/bw_l_diff_cdf_wacky_bwo_2.png")
-ggplot(results.bwo, aes(bw_l_diff)) + stat_ecdf(geom = "step")
+png("figures/bw_l_diff_cdf_wacky_bwo.png")
+ggplot(results.bwo, aes(bw_l_diff_wa)) + stat_ecdf(geom = "step")
 dev.off()
 
 
-png("figures/bw_r_diff_wacky_bwo_2.png")
-ggplot(results.bwo, aes(bw_r_diff)) + geom_density()
+png("figures/bw_r_diff_wacky_bwo.png")
+ggplot(results.bwo, aes(bw_r_diff_wa)) + geom_density()
 dev.off()
 
-png("figures/bw_r_diff_cdf_wacky_bwo_2.png")
-ggplot(results.bwo, aes(bw_r_diff)) + stat_ecdf(geom = "step")
+png("figures/bw_r_diff_cdf_wacky_bwo.png")
+ggplot(results.bwo, aes(bw_r_diff_wa)) + stat_ecdf(geom = "step")
 dev.off()
 
-
-png("figures/coeff_diff_wacky_zero_2.png")
+### zero_base_diff
+png("figures/coef_diff_base_zero.png")
 ggplot(results.zero, aes(coef_diff)) + geom_density()
 dev.off()
 
-png("figures/coeff_diff_cdf_wacky_zero_2.png")
+png("figures/coef_diff_cdf_base_zero.png")
 ggplot(results.zero, aes(coef_diff)) + stat_ecdf(geom = "step")
 dev.off()
 
-png("figures/bw_diff_wacky_zero_2.png")
+png("figures/bw_diff_base_zero.png")
 ggplot(results.zero, aes(bw_length_diff)) + geom_density()
 dev.off()
 
-png("figures/bw_diff_cdf_wacky_zero_2.png")
+png("figures/bw_diff_cdf_base_zero.png")
 ggplot(results.zero, aes(bw_length_diff)) + stat_ecdf(geom = "step")
 dev.off()
 
-png("figures/bw_l_diff_wacky_zero_2.png")
+png("figures/bw_l_diff_base_zero.png")
 ggplot(results.zero, aes(bw_l_diff)) + geom_density()
 dev.off()
 
-png("figures/bw_l_diff_cdf_wacky_zero_2.png")
+png("figures/bw_l_diff_cdf_base_zero.png")
 ggplot(results.zero, aes(bw_l_diff)) + stat_ecdf(geom = "step")
 dev.off()
 
 
-png("figures/bw_r_diff_wacky_zero_2.png")
+png("figures/bw_r_diff_base_zero.png")
 ggplot(results.zero, aes(bw_r_diff)) + geom_density()
 dev.off()
 
-png("figures/bw_r_diff_cdf_wacky_zero_2.png")
+png("figures/bw_r_diff_cdf_base_zero.png")
 ggplot(results.zero, aes(bw_r_diff)) + stat_ecdf(geom = "step")
+dev.off()
+
+### zero_wacky_diff
+png("figures/coef_diff_wacky_zero.png")
+ggplot(results.zero, aes(coef_diff_wa)) + geom_density()
+dev.off()
+
+png("figures/coef_diff_cdf_wacky_zero.png")
+ggplot(results.zero, aes(coef_diff_wa)) + stat_ecdf(geom = "step")
+dev.off()
+
+png("figures/bw_diff_wacky_zero.png")
+ggplot(results.zero, aes(bw_length_diff_wa)) + geom_density()
+dev.off()
+
+png("figures/bw_diff_cdf_wacky_zero.png")
+ggplot(results.zero, aes(bw_length_diff_wa)) + stat_ecdf(geom = "step")
+dev.off()
+
+png("figures/bw_l_diff_wacky_zero.png")
+ggplot(results.zero, aes(bw_l_diff_wa)) + geom_density()
+dev.off()
+
+png("figures/bw_l_diff_cdf_wacky_zero.png")
+ggplot(results.zero, aes(bw_l_diff_wa)) + stat_ecdf(geom = "step")
+dev.off()
+
+
+png("figures/bw_r_diff_wacky_zero.png")
+ggplot(results.zero, aes(bw_r_diff_wa)) + geom_density()
+dev.off()
+
+png("figures/bw_r_diff_cdf_wacky_zero.png")
+ggplot(results.zero, aes(bw_r_diff_wa)) + stat_ecdf(geom = "step")
 dev.off()
 ###########################################################
 
@@ -231,7 +334,7 @@ dev.off()
     plot(y.model~x,., ylim = range(c(y,y.model)),
          axes = FALSE, xlab = "", ylab = "")
 
-  png("figures/wacky_2_eg_1000.png")
+  png("figures/wacky_eg_1000.png")
   sample %>%
     filter(x > -20 & x < 20) %T>%
     plot(y.wacky~x,., ylim = range(c(y.wacky,y)),
