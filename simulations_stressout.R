@@ -36,6 +36,8 @@ sample.x <- as.data.frame(matrix(0, ncol = 0, nrow = nrow(df)/10))
 
 ### NORMAL DISTRIBUTION ON BOTH SIDES, SAME POLYNOMIAL
 df$y.base<-0.5*df$x  - 0.025*df$x^2+rnorm(length(df$x),0,10)  
+## 
+
 jump=10
 df$y=df$y.base+jump*df$treated
 df$y.noisy=df$y+rnorm(length(df$x),0,30)
@@ -47,7 +49,7 @@ for(i in 1:loop) {
   sample.x=subset(sample.x, x>-100 & x<100)
   sample=as.data.frame(inner_join(df, sample.x, by="x"))
   
-  results.current=rdrobust(sample$y,sample$x, bwselect = "msetwo")
+  results.current=rdrobust(sample$y,sample$x)
   results[i,1]=results.current$coef[2]-jump # normalizing to zero
   results[i,2:3]=results.current$bws[2,1:2]
   results[i,4]=results[i,2]+results[i,3]
@@ -60,16 +62,14 @@ for(i in 1:loop) {
   sample$y.wacky <- ifelse((sample$x > results[i,3]-2 & sample$x < results[i,3]) | 
                              (sample$x < -results[i,2]+2 & sample$x > -results[i,2]),
                            sample$y.noisy,sample$y)
-  results.current=rdrobust(sample$y.wacky,sample$x, bwselect = "msetwo")
+  results.current=rdrobust(sample$y.wacky,sample$x)
   results[i,5]=results.current$coef[2]-jump # normalizing to zero
   results[i,6:7]=results.current$bws[2,1:2]
   results[i,8]=results[i,6]+results[i,7]
   results[i,9:12]=results[i,1:4]-results[i,5:8]
   
-
-  
   sample.bwo=subset(sample,x> -results[i,6] & x< results[i,7])
-  results.current=rdrobust(sample.bwo$y.wacky,sample.bwo$x, bwselect = "msetwo")
+  results.current=rdrobust(sample.bwo$y.wacky,sample.bwo$x)
   results.bwo[i,1]=results.current$coef[2]-jump # normalizing to zero
   results.bwo[i,2:3]=results.current$bws[2,1:2]
   results.bwo[i,4]=results.bwo[i,2]+results.bwo[i,3]
@@ -79,7 +79,7 @@ for(i in 1:loop) {
   sample.zero=sample
   sample.zero$y.zero <- ifelse(sample$x> -results[i,6] & 
                             sample$x< results[i,7], sample$y.wacky, 0)
-  results.current=rdrobust(sample.zero$y.zero,sample.zero$x, bwselect = "msetwo")
+  results.current=rdrobust(sample.zero$y.zero,sample.zero$x)
   results.zero[i,1]=results.current$coef[2]-jump # normalizing to zero
   results.zero[i,2:3]=results.current$bws[2,1:2]
   results.zero[i,4]=results.zero[i,2]+results.zero[i,3]
@@ -91,7 +91,7 @@ for(i in 1:loop) {
   #                                (sample$x < -results.con[i,2]+2 & sample$x > -results.con[i,2]),
   #                              sample$y.noisy,sample$y)
   # 
-  # results.current=rdrobust(sample$y.wacky.con,sample$x, bwselect = "msetwo")
+  # results.current=rdrobust(sample$y.wacky.con,sample$x)
   # results.con[i,5]=results.current$coef[1]-jump # normalizing to zero
   # results.con[i,6:7]=results.current$bws[1,1:2]
   # results.con[i,8]=results.con[i,6]+results.con[i,7]
@@ -145,9 +145,29 @@ for(i in 1:loop) {
   }
 }
 
-save.image("stressout_data.RData")
+# Summary Statistics #
+summary(results$coef)
+summary(results$coef_wa)
+summary(results.bwo$coef)
+summary(results.zero$coef)
 
- ## wacky_base_diff
+save.image("stressout_data_single_bw.RData")
+
+load("stressout_data_single_bw_low_sd.RData")
+## PDF'S OF LEVELS
+png("figures/coef_wacky.png")
+ggplot(results, aes(coef_wa)) + geom_density()
+dev.off()
+
+png("figures/coef_zero.png")
+ggplot(results.zero, aes(coef)) + geom_density()
+dev.off()
+
+png("figures/coef_bwo.png")
+ggplot(results.bwo, aes(coef)) + geom_density()
+dev.off()
+
+## wacky_base_diff
  
  png("figures/coef_diff_base_wacky.png")
  ggplot(results, aes(coef_diff)) + geom_density()
@@ -319,13 +339,14 @@ ggplot(results.zero, aes(bw_r_diff_wa)) + stat_ecdf(geom = "step")
 dev.off()
 ###########################################################
 
-  #rdrobust(sample$y.wacky,sample$x, bwselect = "msetwo")$bws
-  obw_pre=rdrobust(sample$y,sample$x, bwselect = "msetwo")$bws[2,1:2]
+  #rdrobust(sample$y.wacky,sample$x)$bws
+  obw_pre=rdrobust(sample$y,sample$x)$bws[2,1:2]
   sample$y.wacky <- ifelse((sample$x > obw_pre[2]-1 & sample$x < obw_pre[2]) | 
                              (sample$x < -obw_pre[1]+1 & sample$x > -obw_pre[1]),
                            sample$wa,sample$y.noisy)
   
-  
+  load("stressout_data_single_bw_low_sd.RData")
+  png("figures/dgp_single_bw_low_sd.png")
   sample %>%
     filter(x > -30 & x < 30) %T>%
     plot(y~x,., ylim = range(c(y,y.model)),
@@ -333,7 +354,9 @@ dev.off()
     par(new = T) %>%
     plot(y.model~x,., ylim = range(c(y,y.model)),
          axes = FALSE, xlab = "", ylab = "")
-
+  dev.off()
+  
+  
   png("figures/wacky_eg_1000.png")
   sample %>%
     filter(x > -20 & x < 20) %T>%
