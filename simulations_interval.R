@@ -16,6 +16,7 @@ loop=1000
 quadratic=T
 normal.x=F
 var.list=c("coef.c","coef.bc","obw.c","obw.bc")
+gdp.sd=10 
 
 ### SETTING UP FOR EVERYTHING - A SINGLE DGP ###
 df <- as.data.frame(matrix(0, ncol = 0, nrow = length(seq(-100,100,0.01))))
@@ -24,13 +25,14 @@ df=subset(df,df$x!=0)
 df$treated <- ifelse(df$x>0, 1, 0)
 sample.x <- as.data.frame(matrix(0, ncol = 0, nrow = nrow(df)/10))
 
+# Definitions
 quad_test=ifelse(quadratic==T,"quadratic","linear")
 normal_test=ifelse(normal.x==T,"rnorm","runif")
 save.ext=paste(quad_test,normal_test,sep = "_")
 
 ### DGP: 
 df$y.model<- 0.5*df$x  - 0.025*df$x^2*quadratic + jump*df$treated
-df$y=df$y.model+rnorm(length(df$x),0,10)
+df$y=df$y.model+rnorm(length(df$x),0,gdp.sd)
 
 ## PLOT OF DGP
 figure_name=paste("figures/dgp_",quad_test,".png",sep = "")

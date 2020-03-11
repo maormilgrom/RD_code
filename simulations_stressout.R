@@ -4,7 +4,21 @@ library(dplyr)
 library(rdrobust)
 library(ggplot2)
 library(reshape2)
+library(gridExtra)
 setwd("C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R")  
+
+###### SETTING PARAMETERS
+set.seed(1)
+jump=10
+loop=1000
+quadratic=T
+symmetric=T
+normal.x=T
+gdp.sd=10
+noisy.sd=30
+wacky.int=2 # interval inside obw for adding noise
+bc=F #bias-corrected estimates or conventional
+treat="bwo" # select zero or bwo
 
 ### SETTING UP FOR EVERYTHING - A SINGLE DGP ###
 df <- as.data.frame(matrix(0, ncol = 0, nrow = length(seq(-100,100,0.01))))
@@ -12,158 +26,146 @@ df$x=round(seq(-100,100,0.01), digits=2)
 df=subset(df,df$x!=0)
 df$treated <- ifelse(df$x>0, 1, 0)
 
-loop=1000
+# Definitions
+quad_test=ifelse(quadratic==T,"quadratic","linear")
+normal_test=ifelse(normal.x==T,"rnorm","runif")
+bc_test=ifelse(bc==T,"bc","c")
+save.ext=paste(bc_test,quad_test,normal_test,sep = "_")
+sym_test=ifelse(symmetric==T,"mserd","msetwo")
 
-results<- as.data.frame(matrix(0, ncol = 12, nrow = loop))
-colnames(results) <- c("coef","bw_l","bw_r","bw_length",
-                       "coef_wa","bw_l_wa","bw_r_wa","bw_length_wa",
-                       "coef_diff","bw_l_diff","bw_r_diff","bw_length_diff")
-results.con<- as.data.frame(matrix(0, ncol = 12, nrow = loop))
-colnames(results.con) <- c("coef","bw_l","bw_r","bw_length",
-                           "coef_wa","bw_l_wa","bw_r_wa","bw_length_wa",
-                           "coef_diff","bw_l_diff","bw_r_diff","bw_length_diff")
-
-results.zero<- as.data.frame(matrix(0, ncol = 12, nrow = loop))
-colnames(results.zero) <- c("coef","bw_l","bw_r","bw_length",
-                            "coef_diff","bw_l_diff","bw_r_diff","bw_length_diff",
-                            "coef_diff_wa","bw_l_diff_wa","bw_r_diff_wa","bw_length_diff_wa")
-
-results.bwo<- as.data.frame(matrix(0, ncol = 12, nrow = loop))
-colnames(results.bwo) <- c("coef","bw_l","bw_r","bw_length",
-                            "coef_diff","bw_l_diff","bw_r_diff","bw_length_diff",
-                            "coef_diff_wa","bw_l_diff_wa","bw_r_diff_wa","bw_length_diff_wa")
+results<- as.data.frame(matrix(0, ncol = 10, nrow = loop))
+colnames(results) <- c("coef","obw","obw_l","obw_r",
+                       "coef_wa","obw_l_wa","obw_r_wa","obw_wa",
+                       "coef_diff","obw_diff")
+results.treat<- as.data.frame(matrix(0, ncol = 8, nrow = loop))
+colnames(results.treat) <- c("coef","obw","obw_l","obw_r",
+                            "coef_diff","obw_diff",
+                            "coef_diff_wa","obw_diff_wa")
 
 sample.x <- as.data.frame(matrix(0, ncol = 0, nrow = nrow(df)/10))
 
-### NORMAL DISTRIBUTION ON BOTH SIDES, SAME POLYNOMIAL
-#df$y.base<-0.5*df$x  - 0.025*df$x^2+rnorm(length(df$x),0,10)  
 
-### NORMAL Noise ON BOTH SIDES, Linear LOW SD 
-df$y.base<-0.5*df$x+rnorm(length(df$x),0,10)  
+### DGP: 
+df$y.model<- 0.5*df$x  - 0.025*df$x^2*quadratic + jump*df$treated
+df$y=df$y.model+rnorm(length(df$x),0,gdp.sd)
+df$y.noisy=df$y+rnorm(length(df$x),0,noisy.sd)
 
-jump=10
-df$y=df$y.base+jump*df$treated
-df$y.noisy=df$y+rnorm(length(df$x),0,30)
-#df$y.model<- jump*df$treated + 0.5*df$x  - 0.025*df$x^2
-df$y.model<- jump*df$treated + 0.5*df$x
+###### DGP GENERAL FIGURES ##############
 
+## PLOT OF DGP
+figure_name=paste("figures/dgp_",quad_test,".png",sep = "")
+png(figure_name)
+df %T>%
+  plot(y~x,., ylim = range(c(y,y.model)),
+       col="blue", ylab = "Y", xlab = "X") %T>%
+  par(new = T) %>%
+  plot(y.model~x,., ylim = range(c(y,y.model)),
+       axes = FALSE, xlab = "", ylab = "")
+dev.off()
+
+######### Iterations ##########
 
 for(i in 1:loop) {
-  sample.x$x <- round(rnorm(nrow(df)/10, 0, 10),digits = 2) 
+  if (normal.x==T) {
+    sample.x$x <- round(rnorm(nrow(df)/10, 0, 10),digits = 2) 
+  } else {
+    sample.x$x <- round(runif(nrow(df)/10, -20,20),digits = 2) 
+  }
+
   sample.x=subset(sample.x, x>-100 & x<100)
   sample=as.data.frame(inner_join(df, sample.x, by="x"))
+  results.current=rdrobust(sample$y,sample$x,bwselect = sym_test)
+  results[i,1]=results.current$coef[bc+1]-jump # normalizing to zero
+  results[i,3:4]=results.current$bws[bc+1,1:2]
+  results[i,2]=results[i,3]+results[i,4]
   
-  results.current=rdrobust(sample$y,sample$x)
-  results[i,1]=results.current$coef[2]-jump # normalizing to zero
-  results[i,2:3]=results.current$bws[2,1:2]
-  results[i,4]=results[i,2]+results[i,3]
-  
-  results.con[i,1]=results.current$coef[1]-jump # normalizing to zero
-  results.con[i,2:3]=results.current$bws[1,1:2]
-  results.con[i,4]=results.con[i,2]+results.con[i,3]
-
-  range=2
-  sample$y.wacky <- ifelse((sample$x > results[i,3]-2 & sample$x < results[i,3]) | 
-                             (sample$x < -results[i,2]+2 & sample$x > -results[i,2]),
+  sample$y.wacky <- ifelse((sample$x > results[i,4]-wacky.int & sample$x < results[i,4]) | 
+                             (sample$x < -results[i,3]+wacky.int & sample$x > -results[i,3]),
                            sample$y.noisy,sample$y)
   results.current=rdrobust(sample$y.wacky,sample$x)
-  results[i,5]=results.current$coef[2]-jump # normalizing to zero
-  results[i,6:7]=results.current$bws[2,1:2]
-  results[i,8]=results[i,6]+results[i,7]
-  results[i,9:12]=results[i,1:4]-results[i,5:8]
+  results[i,5]=results.current$coef[bc+1]-jump # normalizing to zero
+  results[i,7:8]=results.current$bws[bc+1,1:2]
+  results[i,6]=results[i,7]+results[i,8]
+  results[i,9:10]=results[i,1:2]-results[i,5:6]
   
-  sample.bwo=subset(sample,x> -results[i,6] & x< results[i,7])
-  results.current=rdrobust(sample.bwo$y.wacky,sample.bwo$x)
-  results.bwo[i,1]=results.current$coef[2]-jump # normalizing to zero
-  results.bwo[i,2:3]=results.current$bws[2,1:2]
-  results.bwo[i,4]=results.bwo[i,2]+results.bwo[i,3]
-  results.bwo[i,5:8]=results[i,1:4]-results.bwo[i,1:4]
-  results.bwo[i,9:12]=results[i,5:8]-results.bwo[i,1:4]
+  if (treat=="zero") {
+    sample.treat=sample
+    sample.treat$y.wacky <- ifelse(sample$x> -results[i,7] & 
+                                   sample$x< results[i,8], sample$y.wacky, 0)
+    
+  } else if (treat=="bwo") {
+    sample.treat=subset(sample,x> -results[i,7] & x< results[i,8])
+  }
   
-  sample.zero=sample
-  sample.zero$y.zero <- ifelse(sample$x> -results[i,6] & 
-                            sample$x< results[i,7], sample$y.wacky, 0)
-  results.current=rdrobust(sample.zero$y.zero,sample.zero$x)
-  results.zero[i,1]=results.current$coef[2]-jump # normalizing to zero
-  results.zero[i,2:3]=results.current$bws[2,1:2]
-  results.zero[i,4]=results.zero[i,2]+results.zero[i,3]
-  results.zero[i,5:8]=results[i,1:4]-results.zero[i,1:4]
-  results.zero[i,9:12]=results[i,5:8]-results.zero[i,1:4]
-  
-  
-  sample$y.wacky.con <- ifelse((sample$x > results.con[i,3]-2 & sample$x < results.con[i,3]) |
-                                 (sample$x < -results.con[i,2]+2 & sample$x > -results.con[i,2]),
-                               sample$y.noisy,sample$y)
+    results.current=rdrobust(sample.treat$y.wacky,sample.treat$x)
+    results.treat[i,1]=results.current$coef[bc+1]-jump # normalizing to zero
+    results.treat[i,3:4]=results.current$bws[bc+1,1:2]
+    results.treat[i,2]=results.treat[i,3]+results.treat[i,4]
+    results.treat[i,5:6]=results[i,1:2]-results.treat[i,1:2]
+    results.treat[i,7:8]=results[i,5:6]-results.treat[i,1:2]
 
-  results.current=rdrobust(sample$y.wacky.con,sample$x)
-  results.con[i,5]=results.current$coef[1]-jump # normalizing to zero
-  results.con[i,6:7]=results.current$bws[1,1:2]
-  results.con[i,8]=results.con[i,6]+results.con[i,7]
-
-  results.con[i,9:12]=results.con[i,1:4]-results.con[i,5:8]
-
-  if (i <= 10) {
-
+    #### FIGURES INSIDE LOOP - SPECIFIC DRAWS ####
+  if (i <= 5) {
 
   coef_base=paste("Base: Coef = ",round(results[i,1],digits = 2)+jump,sep = "")
   coef_wacky=paste("Wacky: Coef = ",round(results[i,5],digits = 2)+jump,sep = "")
-  coef_zero=paste("Zero: Coef = ",round(results.zero[i,1],digits = 2)+jump,sep = "")
-  coef_bwo=paste("Drop: Coef = ",round(results.bwo[i,1],digits = 2)+jump,sep = "")
-  
-  figure_name=paste("figures/wacky_eg_",i,"_zero.png",sep = "")
+  coef_treat=paste(treat,": Coef = ",round(results.treat[i,1],digits = 2)+jump,sep = "")
+
+
+  figure_name=paste("figures/sample_wacky",i,"_",treat,save.ext,".png",sep = "")
   png(figure_name)
-  sample.zero %>%
-    filter(x > -20 & x < 20) %T>%
-    plot(y.wacky~x,., ylim = range(c(y.wacky,y.zero)),
-         col="red", ylab = "Y", xlab = "X") %T>%
-      par(new = T) %>%
-    plot(y.zero~x,., ylim = range(c(y.wacky,y.zero)),
-         col="blue", ylab = "Y", xlab = "X") 
-    abline(v = c(-results[i,2],-results[i,6],-results.zero[i,2],
-               results[i,3], results[i,7], results.zero[i,3]),
-         col=c("blue","red","green", "blue", "red","green"), 
+  temp.treat=sample.treat %>%
+    filter(x > -20 & x < 20)
+  temp=sample %>%
+    filter(x > -20 & x < 20)
+  plot(temp$y.wacky~temp$x, ylim = range(c(temp.treat$y.wacky,temp$y.wacky)),
+       xlim = range(c(temp.treat$x,temp$x)),
+       col="red", ylab = "Y", xlab = "X")
+  par(new = T)
+  plot(temp.treat$y.wacky~temp.treat$x, ylim = range(c(temp.treat$y.wacky,temp$y.wacky)),
+       xlim = range(c(temp.treat$x,temp$x)),
+       col="blue", ylab = "Y", xlab = "X")
+  abline(v = c(-results[i,3],-results[i,7], -results.treat[i,3],
+               results[i,4], results[i,8], results.treat[i,4]),
+         col=c("blue","red","green", "blue", "red","green"),
          lty=c(1,2,3,1,2,3), lwd=c(1,2,3,1,2,3))
-  legend("top", legend=c(coef_base, coef_wacky, coef_zero),
+  legend("top", legend=c(coef_base, coef_wacky, coef_treat),
          col=c("blue", "red", "green"), lty=1:3, cex=0.8)
   dev.off()
-
-    figure_name=paste("figures/wacky_eg_",i,"_bwo_model.png",sep = "")
+  
+    figure_name=paste("figures/sample_wacky",i,treat,save.ext,"model.png",sep = "_")
     png(figure_name)
-    temp.bwo=sample.bwo %>%
+    temp.treat=sample.treat %>%
       filter(x > -20 & x < 20)
     temp=sample %>%
       filter(x > -20 & x < 20)
-    plot(temp$y.wacky~temp$x, ylim = range(c(temp.bwo$y.wacky,temp$y.wacky)),
-         xlim = range(c(temp.bwo$x,temp$x)),
+    plot(temp$y.wacky~temp$x, ylim = range(c(temp.treat$y.wacky,temp$y.wacky)),
+         xlim = range(c(temp.treat$x,temp$x)),
          col="red", ylab = "Y", xlab = "X")
     par(new = T)
-    plot(temp.bwo$y.wacky~temp.bwo$x, ylim = range(c(temp.bwo$y.wacky,temp$y.wacky)),
-         xlim = range(c(temp.bwo$x,temp$x)),
+    plot(temp.treat$y.wacky~temp.treat$x, ylim = range(c(temp.treat$y.wacky,temp$y.wacky)),
+         xlim = range(c(temp.treat$x,temp$x)),
          col="blue", ylab = "Y", xlab = "X")
     par(new = T)
-    plot(temp$y.model~temp$x, ylim = range(c(temp.bwo$y.wacky,temp$y.wacky)),
-         xlim = range(c(temp.bwo$x,temp$x)),
+    plot(temp$y.model~temp$x, ylim = range(c(temp.treat$y.wacky,temp$y.wacky)),
+         xlim = range(c(temp.treat$x,temp$x)),
          col="black", ylab = "Y", xlab = "X")
-    abline(v = c(-results[i,2],-results[i,6], -results.bwo[i,2],
-                 results[i,3], results[i,7], results.bwo[i,3]),
+    abline(v = c(-results[i,2],-results[i,6], -results.treat[i,2],
+                 results[i,3], results[i,7], results.treat[i,3]),
            col=c("blue","red","green", "blue", "red","green"),
            lty=c(1,2,3,1,2,3), lwd=c(1,2,3,1,2,3))
-    legend("top", legend=c(coef_base, coef_wacky, coef_bwo),
+    legend("top", legend=c(coef_base, coef_wacky, coef_treat),
            col=c("blue", "red", "green"), lty=1:3, cex=0.8)
     dev.off()
     
     
-    figure_name=paste("figures/rd_plot_linear_wacky_",i,".png",sep = "")
+    figure_name=paste("figures/rd_plot_wacky",i,"_",save.ext,".png",sep = "")
     png(figure_name)
     rdplot(sample$y.wacky,sample$x)
     dev.off()
-
-    figure_name=paste("figures/rd_plot_linear_bwo_",i,".png",sep = "")
-    png(figure_name)
-    rdplot(sample.bwo$y.wacky,sample.bwo$x)
-    dev.off()
     
-    figure_name=paste("figures/sample_single_bw_linear",i,".png",sep = "")
+
+    figure_name=paste("figures/sample",i,"_",save.ext,".png",sep = "")
     png(figure_name)
     sample %>%
       filter(x > -30 & x < 30) %T>%
@@ -174,209 +176,96 @@ for(i in 1:loop) {
            axes = FALSE, xlab = "", ylab = "")
     dev.off()
     
-    figure_name=paste("figures/sample_single_bw_linear_bwo",i,".png",sep = "")
-    png(figure_name)
-    sample.bwo %>%
-      filter(x > -30 & x < 30) %T>%
-      plot(y~x,., ylim = range(c(y,y.model)),
-           col="blue", ylab = "Y", xlab = "X") %T>%
-      par(new = T) %>%
-      plot(y.model~x,., ylim = range(c(y,y.model)),
-           axes = FALSE, xlab = "", ylab = "")
-    dev.off()
-    
+
     }
 }
 
-###############################
+data_name=paste("stressout_data","_",treat,"_",save.ext,".RData",sep = "")
+save.image(data_name)
+
+######## SUMMARY FIGURES ###########
 
 
+#load(data_name)
 
-load("stressout_data_single_bw_linear.RData")
 ## PDF'S OF LEVELS
-png("figures/coef.png")
+figure_name=paste("figures/coef","_",save.ext,".png",sep = "")
+png(figure_name)
 ggplot(results, aes(coef)) + geom_density() + 
   geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
 dev.off()
 
-png("figures/coef_wacky.png")
+figure_name=paste("figures/coef_wacky","_",save.ext,".png",sep = "")
+png(figure_name)
 ggplot(results, aes(coef_wa)) + geom_density() + 
    geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
 dev.off()
 
-png("figures/coef_zero.png")
-ggplot(results.zero, aes(coef)) + geom_density() +
+figure_name=paste("figures/coef","_",treat,"_",save.ext,".png",sep = "")
+png(figure_name)
+ggplot(results.treat, aes(coef)) + geom_density() +
   geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
 dev.off()
 
-png("figures/coef_bwo.png")
-ggplot(results.bwo, aes(coef)) + geom_density() +
-  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
-dev.off()
-
-## wacky_base_diff
- 
- png("figures/coef_diff_base_wacky.png")
- ggplot(results, aes(coef_diff)) + geom_density() +
-   geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
- dev.off()
- 
- png("figures/coef_diff_cdf_base_wacky.png")
+  ## wacky_base_diff_CDF
+figure_name=paste("figures/coef_diff_cdf_base_wacky","_",save.ext,".png",sep = "")
+png(figure_name)
  ggplot(results, aes(coef_diff)) + stat_ecdf(geom = "step")
  dev.off()
  
-png("figures/bw_diff_base_wacky.png")
- ggplot(results, aes(bw_length_diff)) + geom_density() +
-   geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
- dev.off()
- 
- png("figures/bw_diff_cdf_base_wacky.png")
- ggplot(results, aes(bw_length_diff)) + stat_ecdf(geom = "step")
+ figure_name=paste("figures/obw_diff_cdf_base_wacky","_",save.ext,".png",sep = "")
+ png(figure_name)
+ ggplot(results, aes(obw_diff)) + stat_ecdf(geom = "step")
  dev.off()
 
-### bwo_base_diff
- png("figures/coef_diff_base_bwo.png")
- ggplot(results.bwo, aes(coef_diff)) + geom_density() +
-   geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
+### treat_base_diff
+ figure_name=paste("figures/coef_diff_cdf_base","_",treat,"_",save.ext,".png",sep = "")
+ png(figure_name)
+ ggplot(results.treat, aes(coef_diff)) + stat_ecdf(geom = "step")
  dev.off()
  
- png("figures/coef_diff_cdf_base_bwo.png")
- ggplot(results.bwo, aes(coef_diff)) + stat_ecdf(geom = "step")
+ figure_name=paste("figures/obw_diff_cdf_base","_",treat,"_",save.ext,".png",sep = "")
+ png(figure_name)
+ ggplot(results.treat, aes(obw_diff)) + stat_ecdf(geom = "step")
  dev.off()
- 
- png("figures/bw_diff_base_bwo.png")
- ggplot(results.bwo, aes(bw_length_diff)) + geom_density() +
-   geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
- dev.off()
- 
- png("figures/bw_diff_cdf_base_bwo.png")
- ggplot(results.bwo, aes(bw_length_diff)) + stat_ecdf(geom = "step")
- dev.off()
- 
- 
-### bwo_wacky_diff
-png("figures/coef_diff_wacky_bwo.png")
-ggplot(results.bwo, aes(coef_diff_wa)) + geom_density() +
-  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
-dev.off()
 
-png("figures/coef_diff_cdf_wacky_bwo.png")
-ggplot(results.bwo, aes(coef_diff_wa)) + stat_ecdf(geom = "step")
-dev.off()
+### treat_wacky_diff
+  figure_name=paste("figures/coef_diff_cdf_wacky","_",treat,"_",save.ext,".png",sep = "")
+  png(figure_name)
+  ggplot(results.treat, aes(coef_diff_wa)) + stat_ecdf(geom = "step")
+  dev.off()
 
-png("figures/bw_diff_wacky_bwo.png")
-ggplot(results.bwo, aes(bw_length_diff_wa)) + geom_density() +
-  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
-dev.off()
-
-png("figures/bw_diff_cdf_wacky_bwo.png")
-ggplot(results.bwo, aes(bw_length_diff_wa)) + stat_ecdf(geom = "step")
-dev.off()
-
-### zero_base_diff
-png("figures/coef_diff_base_zero.png")
-ggplot(results.zero, aes(coef_diff)) + geom_density() +
-  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
-dev.off()
-
-png("figures/coef_diff_cdf_base_zero.png")
-ggplot(results.zero, aes(coef_diff)) + stat_ecdf(geom = "step")
-dev.off()
-
-png("figures/bw_diff_base_zero.png")
-ggplot(results.zero, aes(bw_length_diff)) + geom_density() +
-  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
-dev.off()
-
-png("figures/bw_diff_cdf_base_zero.png")
-ggplot(results.zero, aes(bw_length_diff)) + stat_ecdf(geom = "step")
-dev.off()
-
-
-### zero_wacky_diff
-png("figures/coef_diff_wacky_zero.png")
-ggplot(results.zero, aes(coef_diff_wa)) + geom_density() +
-  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
-dev.off()
-
-png("figures/coef_diff_cdf_wacky_zero.png")
-ggplot(results.zero, aes(coef_diff_wa)) + stat_ecdf(geom = "step")
-dev.off()
-
-png("figures/bw_diff_wacky_zero.png")
-ggplot(results.zero, aes(bw_length_diff_wa)) + geom_density() +
-  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
-dev.off()
-
-png("figures/bw_diff_cdf_wacky_zero.png")
-ggplot(results.zero, aes(bw_length_diff_wa)) + stat_ecdf(geom = "step")
-dev.off()
-
-
-##################################
-#### COMBINING RESULTS
-coef_means<- as.data.frame(matrix(0, ncol = 5, nrow = 4))
-rownames(coef_means) <- c("coef_base","coef_wacky","coef_zero","coef_bwo")
-colnames(coef_means) <- c("quadratic_asymmetric","quadratic_symmetric",
-                          "quadratic_symmetric_low_sd","linear_symmetric",
-                          "linear_symmetric_low_sd")
-
-load("stressout_data.RData")
-coef_means["coef_base","quadratic_asymmetric"]=summary(results$coef)[4]
-coef_means["coef_wacky","quadratic_asymmetric"]=summary(results$coef_wa)[4]
-coef_means["coef_zero","quadratic_asymmetric"]=summary(results.zero$coef)[4]
-coef_means["coef_bwo","quadratic_asymmetric"]=summary(results.bwo$coef)[4]
-load("stressout_data_single_bw.RData")
-coef_means["coef_base","quadratic_symmetric"]=summary(results$coef)[4]
-coef_means["coef_wacky","quadratic_symmetric"]=summary(results$coef_wa)[4]
-coef_means["coef_zero","quadratic_symmetric"]=summary(results.zero$coef)[4]
-coef_means["coef_bwo","quadratic_symmetric"]=summary(results.bwo$coef)[4]
-load("stressout_data_single_bw_low_sd.RData")
-coef_means["coef_base","quadratic_symmetric_low_sd"]=summary(results$coef)[4]
-coef_means["coef_wacky","quadratic_symmetric_low_sd"]=summary(results$coef_wa)[4]
-coef_means["coef_zero","quadratic_symmetric_low_sd"]=summary(results.zero$coef)[4]
-coef_means["coef_bwo","quadratic_symmetric_low_sd"]=summary(results.bwo$coef)[4]
-load("stressout_data_single_bw_linear.RData")
-coef_means["coef_base","linear_symmetric"]=summary(results$coef)[4]
-coef_means["coef_wacky","linear_symmetric"]=summary(results$coef_wa)[4]
-coef_means["coef_zero","linear_symmetric"]=summary(results.zero$coef)[4]
-coef_means["coef_bwo","linear_symmetric"]=summary(results.bwo$coef)[4]
-load("stressout_data_single_bw_linear_low_sd.RData")
-coef_means["coef_base","linear_symmetric_low_sd"]=summary(results$coef)[4]
-coef_means["coef_wacky","linear_symmetric_low_sd"]=summary(results$coef_wa)[4]
-coef_means["coef_zero","linear_symmetric_low_sd"]=summary(results.zero$coef)[4]
-coef_means["coef_bwo","linear_symmetric_low_sd"]=summary(results.bwo$coef)[4]
-coef_means= round(coef_means,2)
-
-write.csv(coef_means,"coef_means.csv")
-###########################################################
-###### DGP GENERAL FIGURES ##############
-  
-  load("stressout_data_single_bw.RData")
-  png("figures/dgp_single_bw_linear.png")
-  df %>%
-    filter(x > -30 & x < 30) %T>%
-    plot(y~x,., ylim = range(c(y,y.model)),
-         col="blue", ylab = "Y DGP", xlab = "X") %T>%
-    par(new = T) %>%
-    plot(y.model~x,., ylim = range(c(y,y.model)),
-         axes = FALSE, xlab = "", ylab = "")
+  figure_name=paste("figures/obw_diff_cdf_wacky","_",treat,"_",save.ext,".png",sep = "")
+  png(figure_name)
+  ggplot(results.treat, aes(obw_diff_wa)) + stat_ecdf(geom = "step")
   dev.off()
   
+#### SUMMARY STATISTICS ####
   
-######### TESTING CORRELATION BETWEEN OBW_DIFF AND INITIAL OBW #######
-  load("stressout_data_single_bw.RData")
-  cor(results$bw_length,results.bwo$bw_length_diff)
-  cor(results$bw_length,results.zero$bw_length_diff)
+### TESTING CORRELATION BETWEEN OBW_DIFF AND INITIAL OBW ###
+  cor(results$obw,results.treat$obw_diff)
+  cor(results$coef,results.treat$coef_diff)
+
+####### SAVING RESULTS TO TABLE ###########
+results_table=as.data.frame(matrix(0, ncol = 5, nrow = 0))
+results_table[1,1]=round(mean(results$coef),digits = 4)
+results_table[1,2]=round(mean(results$coef_wa),digits = 4)
+results_table[1,3]=round(mean(results.treat$coef),digits = 4)
+results_table[1,4]=round(mean(results.treat$coef_diff),digits = 4)
+results_table[1,5]=round(mean(results.treat$coef_diff_wa),digits = 4)
+results_table[2,1]=round(mean(results$obw),digits = 4)
+results_table[2,2]=round(mean(results$obw_wa),digits = 4)
+results_table[2,3]=round(mean(results.treat$obw),digits = 4)
+results_table[2,4]=round(mean(results.treat$obw_diff),digits = 4)
+results_table[2,5]=round(mean(results.treat$obw_diff_wa),digits = 4)
+colnames(results_table) = c("base","wacky",treat,"diff_base","diff_wacky")
+rownames(results_table) = c("coef","obw")
+
+table_name=paste("figures/results_table_",treat,"_",save.ext,".pdf",sep = "")
+pdf(table_name)
+grid.table(results_table)
+dev.off()
+
+
+
   
-    cor(results$coef,results.bwo$coef_diff)
-  cor(results$bw_length,results.bwo$bw_length)
-  
-  
-######################### OTHER ###########
-      #rdrobust(sample$y.wacky,sample$x)$bws
-      obw_pre=rdrobust(sample$y,sample$x)$bws[2,1:2]
-      sample$y.wacky <- ifelse((sample$x > obw_pre[2]-1 & sample$x < obw_pre[2]) | 
-                                 (sample$x < -obw_pre[1]+1 & sample$x > -obw_pre[1]),
-                               sample$wa,sample$y.noisy)
-      

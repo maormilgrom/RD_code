@@ -35,7 +35,7 @@ dat$spec <- factor(dat$spec, levels =c("norm_j1", "norm_j5", "norm_j10","norm_j2
 png("figures/coef_bc_l2_r2_norm.png")
 ggplot(dat, aes(x = coef_bc, fill = spec)) + geom_density(alpha = 0.3) + geom_vline(xintercept=0,  linetype="dashed")
 dev.off()
-
+  
 ### coef_bc, poly l2_r2, uniform
 dat <- data.frame(coef_bc = c(results_x_unif_l2_r2_j1$coef_bc, results_x_unif_l2_r2_j5$coef_bc,
                               results_x_unif_l2_r2_j10$coef_bc, results_x_unif_l2_r2_j20$coef_bc),
