@@ -1,3 +1,5 @@
+##### SETTING UP THINGS #####
+
 rm(list=ls(all=TRUE))
 set.seed(1)
 library(dplyr)
@@ -7,8 +9,7 @@ library(reshape2)
 library(gridExtra)
 setwd("C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R")  
 
-###### SETTING PARAMETERS
-set.seed(1)
+## DEFINING PARAMETERS ##
 jump=10
 loop=1000
 quadratic=T
@@ -17,10 +18,10 @@ normal.x=T
 gdp.sd=10
 noisy.sd=30
 wacky.int=2 # interval inside obw for adding noise
-bc=F #bias-corrected estimates or conventional
+bc=F        # bias-corrected estimates or conventional
 treat="bwo" # select zero or bwo
 
-### SETTING UP FOR EVERYTHING - A SINGLE DGP ###
+### SETTING UP FOR EVERYTHING ###
 df <- as.data.frame(matrix(0, ncol = 0, nrow = length(seq(-100,100,0.01))))
 df$x=round(seq(-100,100,0.01), digits=2)
 df=subset(df,df$x!=0)
@@ -45,14 +46,13 @@ colnames(results.treat) <- c("coef","obw","obw_l","obw_r",
 sample.x <- as.data.frame(matrix(0, ncol = 0, nrow = nrow(df)/10))
 
 
-### DGP: 
+#### DGP: ####
 df$y.model<- 0.5*df$x  - 0.025*df$x^2*quadratic + jump*df$treated
 df$y=df$y.model+rnorm(length(df$x),0,gdp.sd)
 df$y.noisy=df$y+rnorm(length(df$x),0,noisy.sd)
 
-###### DGP GENERAL FIGURES ##############
 
-## PLOT OF DGP
+## PLOT OF DGP ##
 figure_name=paste("figures/dgp_",quad_test,".png",sep = "")
 png(figure_name)
 df %T>%
@@ -63,7 +63,7 @@ df %T>%
        axes = FALSE, xlab = "", ylab = "")
 dev.off()
 
-######### Iterations ##########
+##### Iterations #####
 
 for(i in 1:loop) {
   if (normal.x==T) {
@@ -104,7 +104,7 @@ for(i in 1:loop) {
     results.treat[i,5:6]=results[i,1:2]-results.treat[i,1:2]
     results.treat[i,7:8]=results[i,5:6]-results.treat[i,1:2]
 
-    #### FIGURES INSIDE LOOP - SPECIFIC DRAWS ####
+    ### FIGURES INSIDE LOOP - SPECIFIC DRAWS ###
   if (i <= 5) {
 
   coef_base=paste("Base: Coef = ",round(results[i,1],digits = 2)+jump,sep = "")
