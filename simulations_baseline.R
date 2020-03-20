@@ -16,7 +16,6 @@ symmetric=T
 normal.x=T
 gdp.sd=10
 noisy.sd=30
-so.int=2 # interval inside obw for adding noise
 bc=F #bias-corrected estimates or conventional
 treat="zero" # select zero or bwo
 
