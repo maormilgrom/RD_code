@@ -1,0 +1,192 @@
+---
+title: "RD Robustness Project"
+subtitle: "Exercise: dropping data away from cutoff"
+author: "Maor Milgrom"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    df_print: paged
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, fig.height=4.5, root.dir = 'C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R')
+setwd("C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R")  
+```
+
+
+# Introduction
+The goal of this project is to test the robustness of the Regression-Discontinuity analysis to different extreme cases, via simulations, using the 'rdrobust' package.  
+
+## This Document: Excercise \#3
+Testing whether the RD coefficient becomes biased when we gradually drop observations in different intervals around the cutoff.
+
+
+```{r packages, include=F}
+library(dplyr)
+library(rdrobust)
+library(ggplot2)
+library(reshape2)
+library(knitr)
+set.seed(1)
+```
+
+### Set Parameters
+Here we set the main parameters for the excercise:
+
+```{r parameters}
+jump=10           # Size of jump at cutoff
+loop=1000
+figs.iter.save=5
+quadratic=T       # T - quadratic DGP, F - linear
+symm_obw="mserd"  # mserd - symmetric OBW, msetwo - asymmetric OBW 
+normal.x=T        # T - normal draws of x around cutoff, F - uniform draws
+dgp.sd=10         # sd of normal noise added to DGP
+bc=F              # bias-corrected (bc) estimates or conventional (c)
+intervals=c(5,10,20,40)
+var.list=c("coef.c","coef.bc","obw.c","obw.bc")
+```
+
+```{r setup, include=F}
+### dataframes for storing results
+df.temp=as.data.frame(matrix(0, ncol = length(intervals), nrow = loop))
+colnames(df.temp) = paste("int",intervals,sep="_")
+
+for (df.name in var.list) {
+  assign(df.name,df.temp)
+}
+
+### Extensions for files based on parameters selected
+figs.dir="C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R/figures/"
+quad_test=ifelse(quadratic==T,"quadratic","linear")
+normal_test=ifelse(normal.x==T,"rnorm","runif")
+bc_test=ifelse(bc==T,"bc","c")
+save.ext=paste(bc_test,quad_test,normal_test,sep = "_")
+file.var=paste("summary_",save.ext,".html",sep = "")
+begin.figures=loop-figs.iter.save
+```
+
+
+### Simulate DGP and plot
+```{r dgp}
+df <- as.data.frame(matrix(0, ncol = 0, nrow = length(seq(-100,100,0.01))))
+df$x=round(seq(-100,100,0.01), digits=2)
+df=subset(df,df$x!=0)
+df$treated <- ifelse(df$x>0, 1, 0)
+
+df$y.model<- 0.5*df$x  - 0.025*df$x^2*quadratic + jump*df$treated
+df$y=df$y.model+rnorm(length(df$x),0,dgp.sd)
+
+## dataframe for draws (samples)
+sample.x <- as.data.frame(matrix(0, ncol = 0, nrow = nrow(df)/10))
+```
+
+```{r plot_dgp, echo=F}
+df %>%
+  filter(x > -50 & x < 50) %T>%
+  plot(y~x,., ylim = range(c(y,y.model)),
+       col="blue", ylab = "Y", xlab = "X") %T>%
+  par(new = T) %>%
+  plot(y.model~x,., ylim = range(c(y,y.model)),
+       axes = FALSE, xlab = "", ylab = "")
+  title(main = "DGP + Model")
+```
+
+
+### Iterations
+Running `r loop` iterations, and presenting figures from last iteration for illustration
+In each iteration, and for each of the `r length(intervals)` intervals, , we: \newline
+
+1. Draw randomly `r nrow(df)/10` observations around the cutoff.
+2. Keep data in that interval around cutoff
+4. compute OBW and RD coefficient
+
+```{r iterations, include=F}
+for (i in 1:loop) {
+  if (normal.x==T) {
+    sample.x$x <- round(rnorm(nrow(df)/10, 0, 10),digits = 2) 
+  } else {
+    sample.x$x <- round(runif(nrow(df)/10, -20,20),digits = 2) 
+  }
+
+  sample.x=subset(sample.x, x>-100 & x<100)
+  sample=as.data.frame(inner_join(df, sample.x, by="x"))
+
+  for (j in intervals) {
+    t=which(j==intervals)
+    sample.int=subset(sample,x> -j & x< j)
+     results.current=rdrobust(sample.int$y,sample.int$x, bwselect = symm_obw)
+    coef.c[i,t]=results.current$coef[1]-jump
+    coef.bc[i,t]=results.current$coef[2]-jump
+    obw.c[i,t]=results.current$bws[1,1]
+    obw.bc[i,t]=results.current$bws[2,1]
+    
+      if (i==1000) {
+      sample.int %T>%
+          plot(y~x,., ylim = range(c(y,y.model)),
+             col="blue", ylab = "Y", xlab = "X") %T>%
+        par(new = T) %>%
+        plot(y.model~x,., ylim = range(c(y,y.model)),
+             axes = FALSE, xlab = "", ylab = "")
+      title(main = paste0("sample - interval of ",j))
+    }
+    }  
+  }
+```
+
+## Results
+
+### Figures summarizing iterations
+```{r figures_summary_print, echo=F, fig.height=3}
+fig.df <- data.frame(coef_bc=c(coef.bc$int_5,coef.bc$int_10,coef.bc$int_20,coef.bc$int_40), spec = rep(c("interval=5", "interval=10", "interval=20","interval=40"),
+                                      each = loop))
+fig.df$spec <- factor(fig.df$spec, levels =c("interval=5", "interval=10", "interval=20","interval=40"))
+ggplot(fig.df, aes(x = coef_bc, fill = spec)) + geom_density(alpha = 0.3) +
+  geom_vline(xintercept=0,  linetype="dashed") +
+  labs(title = "Density of RD coefficients for different intervals",
+       subtitle = "Bias-corrected estimates")
+  
+fig.df <- data.frame(coef_c=c(coef.c$int_5,coef.c$int_10,coef.c$int_20,coef.c$int_40), 
+                  spec = rep(c("interval=5", "interval=10", "interval=20","interval=40"),                                                                                                    each = loop))
+fig.df$spec <- factor(fig.df$spec, levels =c("interval=5", "interval=10", "interval=20","interval=40"))
+ggplot(fig.df, aes(x = coef_c, fill = spec)) + geom_density(alpha = 0.3) +
+  geom_vline(xintercept=0,  linetype="dashed") +
+  labs(title = "Density of RD coefficients for different intervals",
+       subtitle = "Conventional estimates")
+```
+
+
+```{r figures_summary_save, include=F}
+fig.df <- data.frame(coef_bc=c(coef.bc$int_5,coef.bc$int_10,coef.bc$int_20,coef.bc$int_40), spec = rep(c("interval=5", "interval=10", "interval=20","interval=40"),
+                                      each = loop))
+fig.df$spec <- factor(fig.df$spec, levels =c("interval=5", "interval=10", "interval=20","interval=40"))
+figure_name=paste(figs.dir,"coef_bc_interval_bias_",save.ext,".png",sep = "")
+
+png(figure_name)
+ggplot(fig.df, aes(x = coef_bc, fill = spec)) + geom_density(alpha = 0.3) +
+  geom_vline(xintercept=0,  linetype="dashed")
+dev.off()
+
+fig.df <- data.frame(coef_c=c(coef.c$int_5,coef.c$int_10,coef.c$int_20,coef.c$int_40), 
+                  spec = rep(c("interval=5", "interval=10", "interval=20","interval=40"),                                                                                                    each = loop))
+fig.df$spec <- factor(fig.df$spec, levels =c("interval=5", "interval=10", "interval=20","interval=40"))
+figure_name=paste(figs.dir,"coef_c_interval_bias_",save.ext,".png",sep = "")
+png(figure_name)
+ggplot(fig.df, aes(x = coef_c, fill = spec)) + geom_density(alpha = 0.3) +
+  geom_vline(xintercept=0,  linetype="dashed")
+dev.off()
+```
+
+### Summary results - Table 
+Note: coefficients (treatment effects) are normalized to zero, by subtracting from each estimate the size of the jump at the cutoff.
+```{r table, echo=F}
+  results_table=as.data.frame(matrix(0, ncol = 4, nrow = 0))
+  results_table[1,]=round(colMeans(coef.c),digits = 4)
+  results_table[2,]=round(colMeans(coef.bc),digits = 4)
+  results_table[3,]=round(colMeans(obw.c),digits = 4)
+  results_table[4,]=round(colMeans(obw.bc),digits = 4)
+  colnames(results_table) = paste("int",intervals,sep="_")
+  rownames(results_table) =var.list
+  kable(results_table, caption = "Summary Table")
+```
+
+### Interpreting results
+We find that as we restrict the analysis to smaller intervals around the cutoff, not only the optimal OBW chosen is smaller, but the coefficients become biased downwards. 

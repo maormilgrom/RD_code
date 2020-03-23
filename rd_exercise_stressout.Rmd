@@ -1,0 +1,371 @@
+---
+title: "RD Robustness Project"
+author: "Maor Milgrom"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    df_print: paged
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, echo = TRUE, warning=FALSE, message=FALSE, fig.height=4.5, root.dir = 'C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R')
+setwd("C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R")  
+```
+
+
+# Introduction
+The goal of this project is to test the robustness of the Regression-Discontinuity analysis to different extreme cases, via simulations, using the 'rdrobust' package.  
+
+## This Document: Excercise \#2
+Stressing out results, by adding noise inside Optimal Bandwitdh (OBW), before repeating exercise #1.
+
+### Select exercise type:
+```{r select_exercise}
+exercise="bwo"      # Type of exercise - "zero" or "bwo" ('bandwidth only')
+```
+
+
+```{r subtitle, include=F}
+subtitle_var = ifelse(exercise=="zero", "replacing with zeros", "dropping outside OBW")
+```
+
+---
+subtitle: "Exercise: stressout before `r subtitle_var`"
+---
+
+
+```{r packages, include=F}
+library(dplyr)
+library(rdrobust)
+library(ggplot2)
+library(reshape2)
+library(knitr)
+set.seed(1)
+```
+
+
+### Set Parameters
+Here we set the main parameters for the excercise:
+
+```{r parameters}
+jump=10           # Size of jump at cutoff
+loop=1000
+figs.iter.save=5
+quadratic=T       # T - quadratic DGP, F - linear
+symm_obw="mserd"  # mserd - symmetric OBW, msetwo - asymmetric OBW 
+normal.x=T        # T - normal draws of x around cutoff, F - uniform draws
+dgp.sd=10         # sd of normal noise added to DGP
+noisy.sd=30       # sd of noise added inside OBW
+so.int=2          # interval inside OBW for adding noise
+bc=F              # bias-corrected estimates or conventional
+```
+
+```{r setup, include=F}
+### dataframes for storing results
+results<- as.data.frame(matrix(0, ncol = 10, nrow = loop))
+colnames(results) <- c("coef","obw","obw_l","obw_r",
+                       "coef_so","obw_l_so","obw_r_so","obw_so",
+                       "coef_diff","obw_diff")
+
+results.exercise<- as.data.frame(matrix(0, ncol = 8, nrow = loop))
+colnames(results.exercise) <- c("coef","obw","obw_l","obw_r",
+                            "coef_diff","obw_diff",
+                            "coef_diff_so","obw_diff_so")
+
+### Extensions for files based on parameters selected
+figs.dir="C:/Users/yaela/Dropbox (Brown)/Brown/RA/RD/R/figures/"
+quad_test=ifelse(quadratic==T,"quadratic","linear")
+normal_test=ifelse(normal.x==T,"rnorm","runif")
+bc_test=ifelse(bc==T,"bc","c")
+save.ext=paste(bc_test,quad_test,normal_test,sep = "_")
+file.var=paste("summary_",save.ext,".html",sep = "")
+begin.figures=loop-figs.iter.save
+```
+
+
+### Simulate DGP
+```{r dgp}
+df <- as.data.frame(matrix(0, ncol = 0, nrow = length(seq(-100,100,0.01))))
+df$x=round(seq(-100,100,0.01), digits=2)
+df=subset(df,df$x!=0)
+df$treated <- ifelse(df$x>0, 1, 0)
+
+df$y.model<- 0.5*df$x  - 0.025*df$x^2*quadratic + jump*df$treated
+df$y=df$y.model+rnorm(length(df$x),0,dgp.sd)
+df$y.noisy=df$y+rnorm(length(df$x),0,noisy.sd)
+
+## dataframe for draws (samples)
+sample.x <- as.data.frame(matrix(0, ncol = 0, nrow = nrow(df)/10))
+```
+
+### Iterations
+Running `r loop` iterations, and saving figures from `r figs.iter.save` last iterations to file.
+In each iteration, we: \newline
+
+1. draw randomly `r nrow(df)/10` observations around the cutoff.
+2. compute the OBW and RD coefficient
+3. Add noise just inside OBW (within `r so.int` units)
+4. compute again the OBW and RD coefficient
+5. drop observations outside the new OBW/replace them with zero
+6. compute again the OBW and RD coefficient.
+
+```{r iterations, include=F}
+for(i in 1:loop) {
+  if (normal.x==T) {
+    sample.x$x <- round(rnorm(nrow(df)/10, 0, 10),digits = 2) 
+  } else {
+    sample.x$x <- round(runif(nrow(df)/10, -20,20),digits = 2) 
+  }
+
+  sample.x=subset(sample.x, x>-100 & x<100)
+  sample=as.data.frame(inner_join(df, sample.x, by="x"))
+  results.current=rdrobust(sample$y,sample$x, bwselect = symm_obw)
+  results[i,1]=results.current$coef[bc+1]-jump # normalizing to zero
+  results[i,3:4]=results.current$bws[bc+1,1:2]
+  results[i,2]=results[i,3]+results[i,4]
+  
+  sample$y.so <- ifelse((sample$x > results[i,4]-so.int & sample$x < results[i,4]) | 
+                             (sample$x < -results[i,3]+so.int & sample$x > -results[i,3]),
+                           sample$y.noisy,sample$y)
+  results.current=rdrobust(sample$y.so,sample$x,bwselect = symm_obw)
+  results[i,5]=results.current$coef[bc+1]-jump # normalizing to zero
+  results[i,7:8]=results.current$bws[bc+1,1:2]
+  results[i,6]=results[i,7]+results[i,8]
+  results[i,9:10]=results[i,1:2]-results[i,5:6]
+  
+  if (exercise=="zero") {
+    sample.exercise=sample
+    sample.exercise$y.so <- ifelse(sample$x> -results[i,7] & 
+                                   sample$x< results[i,8], sample$y.so, 0)
+    
+  } else if (exercise=="bwo") {
+    sample.exercise=subset(sample,x> -results[i,7] & x< results[i,8])
+  }
+  
+    results.current=rdrobust(sample.exercise$y.so,sample.exercise$x,bwselect = symm_obw)
+    results.exercise[i,1]=results.current$coef[bc+1]-jump # normalizing to zero
+    results.exercise[i,3:4]=results.current$bws[bc+1,1:2]
+    results.exercise[i,2]=results.exercise[i,3]+results.exercise[i,4]
+    results.exercise[i,5:6]=results[i,1:2]-results.exercise[i,1:2]
+    results.exercise[i,7:8]=results[i,5:6]-results.exercise[i,1:2]
+    
+### FIGURES INSIDE LOOP - SPECIFIC DRAWS ###
+if (i >= begin.figures) {
+
+  coef_base=paste("Base: Coef = ",round(results[i,1],digits = 2)+jump,sep = "")
+  coef_so=paste("so: Coef = ",round(results[i,5],digits = 2)+jump,sep = "")
+  coef_treat=paste(exercise,": Coef = ",round(results.exercise[i,1],digits = 2)+jump,sep = "")
+
+
+  figure_name=paste(figs.dir,"sample_so",i,"_",exercise,"_",save.ext,".png",sep = "")
+  png(figure_name)
+  temp.exercise=sample.exercise %>%
+    filter(x > -20 & x < 20)
+  temp=sample %>%
+    filter(x > -20 & x < 20)
+  plot(temp$y.so~temp$x, ylim = range(c(temp.exercise$y.so,temp$y.so)),
+       xlim = range(c(temp.exercise$x,temp$x)),
+       col="red", ylab = "Y", xlab = "X")
+  par(new = T)
+  plot(temp.exercise$y.so~temp.exercise$x, ylim = range(c(temp.exercise$y.so,temp$y.so)),
+       xlim = range(c(temp.exercise$x,temp$x)),
+       col="blue", ylab = "Y", xlab = "X")
+  abline(v = c(-results[i,3],-results[i,7], -results.exercise[i,3],
+               results[i,4], results[i,8], results.exercise[i,4]),
+         col=c("blue","red","green", "blue", "red","green"),
+         lty=c(1,2,3,1,2,3), lwd=c(1,2,3,1,2,3))
+  legend("top", legend=c(coef_base, coef_so, coef_treat),
+         col=c("blue", "red", "green"), lty=1:3, cex=0.8)
+  dev.off()
+  
+    figure_name=paste(figs.dir,"sample_so",i,"_",exercise,"_",save.ext,"_","model.png",sep = "")
+    png(figure_name)
+    temp.exercise=sample.exercise %>%
+      filter(x > -20 & x < 20)
+    temp=sample %>%
+      filter(x > -20 & x < 20)
+    plot(temp$y.so~temp$x, ylim = range(c(temp.exercise$y.so,temp$y.so)),
+         xlim = range(c(temp.exercise$x,temp$x)),
+         col="red", ylab = "Y", xlab = "X")
+    par(new = T)
+    plot(temp.exercise$y.so~temp.exercise$x, ylim = range(c(temp.exercise$y.so,temp$y.so)),
+         xlim = range(c(temp.exercise$x,temp$x)),
+         col="blue", ylab = "Y", xlab = "X")
+    par(new = T)
+    plot(temp$y.model~temp$x, ylim = range(c(temp.exercise$y.so,temp$y.so)),
+         xlim = range(c(temp.exercise$x,temp$x)),
+         col="black", ylab = "Y", xlab = "X")
+    abline(v = c(-results[i,2],-results[i,6], -results.exercise[i,2],
+                 results[i,3], results[i,7], results.exercise[i,3]),
+           col=c("blue","red","green", "blue", "red","green"),
+           lty=c(1,2,3,1,2,3), lwd=c(1,2,3,1,2,3))
+    legend("top", legend=c(coef_base, coef_so, coef_treat),
+           col=c("blue", "red", "green"), lty=1:3, cex=0.8)
+    dev.off()
+    
+    
+    figure_name=paste(figs.dir,"rd_plot_so",i,"_",save.ext,".png",sep = "")
+    png(figure_name)
+    rdplot(sample$y.so,sample$x)
+    dev.off()
+    
+
+    figure_name=paste(figs.dir,"sample",i,"_",save.ext,".png",sep = "")
+    png(figure_name)
+    sample %>%
+      filter(x > -30 & x < 30) %T>%
+      plot(y~x,., ylim = range(c(y,y.model)),
+           col="blue", ylab = "Y", xlab = "X") %T>%
+      par(new = T) %>%
+      plot(y.model~x,., ylim = range(c(y,y.model)),
+           axes = FALSE, xlab = "", ylab = "")
+    dev.off()
+    }
+}
+
+```
+
+### Presenting figures from last iteration for illustration
+```{r sample_figures_present, echo=F}
+  i=loop
+
+  coef_base=paste("Base: Coef = ",round(results[i,1],digits = 2)+jump,sep = "")
+  coef_so=paste("so: Coef = ",round(results[i,5],digits = 2)+jump,sep = "")
+  coef_treat=paste(exercise,": Coef = ",round(results.exercise[i,1],digits = 2)+jump,sep = "")
+
+    
+    rdplot(sample$y.so,sample$x, title = "RD Plot with stressout")
+
+    temp.exercise=sample.exercise %>%
+      filter(x > -20 & x < 20)
+    temp=sample %>%
+      filter(x > -20 & x < 20)
+    plot(temp$y.so~temp$x, ylim = range(c(temp.exercise$y.so,temp$y.so)),
+         xlim = range(c(temp.exercise$x,temp$x)),
+         col="red", ylab = "Y", xlab = "X")
+    par(new = T)
+    plot(temp.exercise$y.so~temp.exercise$x, ylim = range(c(temp.exercise$y.so,temp$y.so)),
+         xlim = range(c(temp.exercise$x,temp$x)),
+         col="blue", ylab = "Y", xlab = "X")
+    par(new = T)
+    plot(temp$y.model~temp$x, ylim = range(c(temp.exercise$y.so,temp$y.so)),
+         xlim = range(c(temp.exercise$x,temp$x)),
+         col="black", ylab = "Y", xlab = "X")
+    abline(v = c(-results[i,2],-results[i,6], -results.exercise[i,2],
+                 results[i,3], results[i,7], results.exercise[i,3]),
+           col=c("blue","red","green", "blue", "red","green"),
+           lty=c(1,2,3,1,2,3), lwd=c(1,2,3,1,2,3))
+    legend("topright", legend=c(coef_base, coef_so, coef_treat),
+           col=c("blue", "red", "green"), lty=1:3, cex=0.8)
+    title(main = paste0("Comparing baseline to streesout to ",exercise))
+
+
+    rdplot(sample.exercise$y,sample.exercise$x, title = paste("RD Plot for",exercise,"with streesout"))
+
+```
+
+## Results
+
+### Figures summarizing iterations
+```{r figures_summary_print, echo=F, fig.height=3}
+## PDF'S OF LEVELS
+ggplot(results, aes(coef_so)) + stat_density(geom="line") + 
+   geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed") +
+  ggtitle("Density of RD coefficients: stressout")
+
+ggplot(results.exercise, aes(coef)) + stat_density(geom="line") +
+  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed") +
+    ggtitle(paste0("Density of RD coefficients: ",exercise))
+
+  ## so_base_diff_CDF
+ ggplot(results, aes(coef_diff)) + stat_ecdf(geom = "step") +
+  ggtitle("CDF of difference b/w baseline coefficients and stressout")
+
+ ggplot(results, aes(obw_diff)) + stat_ecdf(geom = "step") +
+  ggtitle("CDF of difference b/w baseline OBW and stressout")
+
+### treat_so_diff
+  ggplot(results.exercise, aes(coef_diff_so)) + stat_ecdf(geom = "step") +
+  ggtitle(paste0("CDF of difference b/w stressout coefficients and ",exercise))
+
+  ggplot(results.exercise, aes(obw_diff_so)) + stat_ecdf(geom = "step") +
+  ggtitle(paste0("CDF of difference b/w stressout OBW and ",exercise))
+
+```
+
+```{r figures_summary_save, include=F}
+## PDF'S OF LEVELS
+figure_name=paste(figs.dir,"coef","_",save.ext,".png",sep = "")
+png(figure_name)
+ggplot(results, aes(coef)) + stat_density(geom="line") + 
+  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
+dev.off()
+
+figure_name=paste(figs.dir,"coef_so","_",save.ext,".png",sep = "")
+png(figure_name)
+ggplot(results, aes(coef_so)) + stat_density(geom="line") + 
+   geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
+dev.off()
+
+figure_name=paste(figs.dir,"coef","_",exercise,"_",save.ext,".png",sep = "")
+png(figure_name)
+ggplot(results.exercise, aes(coef)) + stat_density(geom="line") +
+  geom_vline(aes(xintercept=0), colour="#BB0000", linetype="dashed")
+dev.off()
+
+  ## so_base_diff_CDF
+figure_name=paste(figs.dir,"coef_diff_cdf_base_so","_",save.ext,".png",sep = "")
+png(figure_name)
+ ggplot(results, aes(coef_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+ figure_name=paste(figs.dir,"obw_diff_cdf_base_so","_",save.ext,".png",sep = "")
+ png(figure_name)
+ ggplot(results, aes(obw_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+
+### treat_base_diff
+ figure_name=paste(figs.dir,"coef_diff_cdf_base","_",exercise,"_",save.ext,".png",sep = "")
+ png(figure_name)
+ ggplot(results.exercise, aes(coef_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+ 
+ figure_name=paste(figs.dir,"obw_diff_cdf_base","_",exercise,"_",save.ext,".png",sep = "")
+ png(figure_name)
+ ggplot(results.exercise, aes(obw_diff)) + stat_ecdf(geom = "step")
+ dev.off()
+
+### treat_so_diff
+  figure_name=paste(figs.dir,"coef_diff_cdf_so","_",exercise,"_",save.ext,".png",sep = "")
+  png(figure_name)
+  ggplot(results.exercise, aes(coef_diff_so)) + stat_ecdf(geom = "step")
+  dev.off()
+
+  figure_name=paste(figs.dir,"obw_diff_cdf_so","_",exercise,"_",save.ext,".png",sep = "")
+  png(figure_name)
+  ggplot(results.exercise, aes(obw_diff_so)) + stat_ecdf(geom = "step")
+  dev.off()
+
+```
+
+### Summary results - Table 
+Note: coefficient (treatment effects) are normalized to zero, by subtracting from each estimate the size of the jump at the cutoff.
+```{r table, echo=F}
+results_table=as.data.frame(matrix(0, ncol = 5, nrow = 0))
+results_table[1,1]=round(mean(results$coef),digits = 4)
+results_table[1,2]=round(mean(results$coef_so),digits = 4)
+results_table[1,3]=round(mean(results.exercise$coef),digits = 4)
+results_table[1,4]=round(mean(results.exercise$coef_diff),digits = 4)
+results_table[1,5]=round(mean(results.exercise$coef_diff_so),digits = 4)
+results_table[2,1]=round(mean(results$obw),digits = 4)
+results_table[2,2]=round(mean(results$obw_so),digits = 4)
+results_table[2,3]=round(mean(results.exercise$obw),digits = 4)
+results_table[2,4]=round(mean(results.exercise$obw_diff),digits = 4)
+results_table[2,5]=round(mean(results.exercise$obw_diff_so),digits = 4)
+colnames(results_table) = c("base","stressout",exercise,"diff_base","diff_so")
+rownames(results_table) = c("coef","obw")
+
+kable(results_table, caption = "Summary Table")
+```
+
+### Interpreting results
+`r ifelse(exercise=="zero","Adding noise within OBW leads to new OBW to be narrower, but coefficients remain unbiased. Then, when replacing values outside new OBW with zeros, the estimated coefficients remain unbiased","Adding noise within OBW leads to new OBW to be narrower, but coefficients remain unbiased.. Then, when dropping values outside new OBW, the OBW became even smaller, and the estimated coefficients are biased downwards")`
